@@ -1,10 +1,44 @@
 # Create the namespace for the host
 ####################################
 
-apiVersion: v1
 kind: Namespace
+apiVersion: v1
 metadata:
   name: pollinimini
+
+
+---
+# Traefic config map
+###################################
+
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: traefik-conf
+  namespace: kube-system
+data:
+  traefik.toml: |
+    # traefik.toml
+    defaultEntryPoints = ["http","https"]
+
+    [entryPoints]
+      [entryPoints.http]
+      address = ":80"
+      [entryPoints.http.redirect]
+      entryPoint = "https"
+      [entryPoints.https]
+      address = ":443"
+      [entryPoints.https.tls]
+
+    [acme]
+    email = "drslump@pollinimini.net"
+    storageFile = "/acme/acme.json"
+    entryPoint = "https"
+    onDemand = true
+    onHostRule = true
+    caServer = "https://acme-v01.api.letsencrypt.org/directory"
+    [[acme.domains]]
+    main = "www.pollinimini.net"
 
 ---
 # Traefic ingress load balancer
@@ -29,9 +63,21 @@ spec:
         name: traefik-ingress-lb
     spec:
       terminationGracePeriodSeconds: 60
+      volumes:
+        - name: config
+          configMap:
+            name: traefik-conf
+        - name: acme
+          hostPath:
+            path: /srv/configs/acme
       containers:
       - image: traefik:v1.3.0-rc1-alpine
         name: traefik-ingress-lb
+        volumeMounts:
+          - mountPath: "/config"
+            name: "config"
+          - mountPath: "/acme"
+            name: "acme"
         resources:
           limits:
             cpu: 200m
@@ -46,8 +92,10 @@ spec:
           hostPort: 443
         - containerPort: 8080
         args:
+        - --configfile=/config/traefik.toml
         - --web
         - --kubernetes
+        - --logLevel=WARN
 
 ---
 # Traefic web UI service
